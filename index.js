@@ -41,7 +41,7 @@ async function run() {
         const userCollection = client.db('picoWorkerDB').collection('users');
         const taskCollection = client.db('picoWorkerDB').collection('task');
         const submissionCollection = client.db('picoWorkerDB').collection('submission');
-        
+
 
         //jwt related api
         app.post('/jwt', async (req, res) => {
@@ -171,7 +171,7 @@ async function run() {
             res.send(result);
         })
 
-      
+
         // Find user by email
         app.get('/user/:email', async (req, res) => {
             const email = req.params.email;
@@ -182,10 +182,25 @@ async function run() {
 
         // save submitted task 
         app.post('/submission', async (req, res) => {
-        const submission = req.body;
-        const result = await submissionCollection.insertOne(submission);
-        res.send(result);
-      })
+            const submission = req.body;
+            const result = await submissionCollection.insertOne(submission);
+            res.send(result);
+        })
+
+        // get all task submission for a specific user
+        app.get('/submission/:email',  async (req, res) => {
+
+            //const tokenEmail = req.user.email;
+            const email = req.params.email;
+
+            // if (tokenEmail !== email) {
+            //     return res.status(403).send({ message: 'forbidden access' });
+            // }
+
+            const query = { 'worker_email': email }
+            const result = await submissionCollection.find(query).toArray();
+            res.send(result);
+        })
 
 
 
