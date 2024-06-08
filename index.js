@@ -4,7 +4,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
-//const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 const port = process.env.PORT || 5000;
 
 //middlewire
@@ -41,13 +41,15 @@ async function run() {
         const userCollection = client.db('picoWorkerDB').collection('users');
         const taskCollection = client.db('picoWorkerDB').collection('task');
         const submissionCollection = client.db('picoWorkerDB').collection('submission');
+        const paymentCollection = client.db('picoWorkerDB').collection('payments');
+        const tempCollection = client.db('picoWorkerDB').collection('temp');
 
 
         //jwt related api
         app.post('/jwt', async (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-                expiresIn: '10h'
+                expiresIn: '15h'
             });
 
             res.send({ token })
@@ -238,19 +240,19 @@ async function run() {
         })
 
         // get all task submission for a specific user
-        // app.get('/submission/:email', async (req, res) => {
+        app.get('/user-submission/:email', async (req, res) => {
 
-        //     //const tokenEmail = req.user.email;
-        //     const email = req.params.email;
+            //const tokenEmail = req.user.email;
+            const email = req.params.email;
 
-        //     // if (tokenEmail !== email) {
-        //     //     return res.status(403).send({ message: 'forbidden access' });
-        //     // }
+            // if (tokenEmail !== email) {
+            //     return res.status(403).send({ message: 'forbidden access' });
+            // }
 
-        //     const query = { 'worker_email': email }
-        //     const result = await submissionCollection.find(query).toArray();
-        //     res.send(result);
-        // })
+            const query = { 'worker_email': email }
+            const result = await submissionCollection.find(query).toArray();
+            res.send(result);
+        })
         // Endpoint to get paginated submissions for a specific user
         app.get('/submission/:email', async (req, res) => {
             const email = req.params.email;
@@ -432,6 +434,105 @@ async function run() {
             const result = await taskCollection.find({}).toArray();
             res.send(result);
         });
+
+
+        //***********Payment related API*******************/
+        app.post("/create-payment-intent", async (req, res) => {
+
+            const { price } = req.body;
+
+            const amount = parseInt(price * 100);
+
+            // console.log(amount, 'amount inside the intent')
+
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types: ['card']
+            });
+
+            res.send({
+                clientSecret: paymentIntent.client_secret
+            })
+        })
+
+        //save the payment in the database
+        // app.post('/payments', async (req, res) => {
+        //     const payment = req.body;
+        //     const paymentResult = await paymentCollection.insertOne(payment);
+
+
+
+        //     res.send({ paymentResult });
+        // })
+        // Save the payment in the database and update user's coin balance
+        app.post('/payments', async (req, res) => {
+            const payment = req.body;
+            const paymentResult = await paymentCollection.insertOne(payment);
+
+            if (paymentResult.insertedId) {
+                const userEmail = payment.email;
+                const coinsToAdd = parseInt(payment.coin);
+                // const updateCoin = { $inc: { coin: task.total } };
+                // Update user's coin balance
+                const userQuery = { email: userEmail };
+                const updateDocument = {
+                    $inc: { coin: coinsToAdd }  // Increment the coin balance by the amount of coins purchased
+                };
+                const userResult = await userCollection.updateOne(userQuery, updateDocument);
+
+                res.send({ paymentResult, userResult });
+            } else {
+                res.status(500).send({ error: "Failed to save payment" });
+            }
+        });
+
+
+        // Add temporary payment details to tempCollection
+        app.post('/temp-payment', async (req, res) => {
+            const { price, coins, email } = req.body;
+
+            if (!price || !coins || !email) {
+                return res.status(400).send({ error: "Missing required fields" });
+            }
+
+            const tempPayment = { price, coins, email };
+            const result = await tempCollection.insertOne(tempPayment);
+
+            if (result.insertedId) {
+                res.send({ success: true });
+            } else {
+                res.status(500).send({ error: "Failed to save temporary payment" });
+            }
+        });
+
+        //get data from tempCollection
+        app.get('/temp-payment/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { email: email };
+            const paymentData = await tempCollection.findOne(query);
+            res.send(paymentData);
+        });
+
+        //payment hoe jawar por tempCollection theke data delete kore dibo
+        app.delete('/temp-payment/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { email: email };
+            const result = await tempCollection.deleteOne(query);
+            res.send(result);
+        });
+
+        //payment history
+        app.get('/payments/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { email: email };
+            const payments = await paymentCollection.find(query).toArray();
+            res.send(payments);
+        });
+        
+
+
+
 
 
 
