@@ -128,12 +128,45 @@ async function run() {
         })
 
         //delete a task by author
+        // app.delete('/task/:id', async (req, res) => {
+        //     const id = req.params.id;
+        //     const query = { _id: new ObjectId(id) }
+        //     const result = await taskCollection.deleteOne(query);
+        //     res.send(result);
+        // })
+        // delete a task by author and update user's coin balance
+        // delete a task by author and update user's coin balance
         app.delete('/task/:id', async (req, res) => {
             const id = req.params.id;
-            const query = { _id: new ObjectId(id) }
-            const result = await taskCollection.deleteOne(query);
-            res.send(result);
-        })
+            const query = { _id: new ObjectId(id) };
+
+            try {
+                // Find the task by its ID
+                const task = await taskCollection.findOne(query);
+
+                if (!task) {
+                    return res.status(404).send({ message: "Task not found" });
+                }
+
+                // Update the user's coin balance
+                const userQuery = { email: task.author_email };
+                const updateCoin = { $inc: { coin: task.total } };
+                const updatedUser = await userCollection.updateOne(userQuery, updateCoin);
+
+                if (updatedUser.modifiedCount === 0) {
+                    return res.status(500).send({ message: "Failed to update user coin balance" });
+                }
+
+                // Delete the task from the database
+                const result = await taskCollection.deleteOne(query);
+
+                res.send(result);
+            } catch (error) {
+                console.error('Error deleting task:', error);
+                res.status(500).send({ message: 'Internal server error' });
+            }
+        });
+
 
         //update product korar jonno data fetch kore client e dekhabo
         app.get('/updateProduct/:id', async (req, res) => {
@@ -160,10 +193,27 @@ async function run() {
         })
 
         //get all task
+        // app.get('/all-task', async (req, res) => {
+        //     const result = await taskCollection.find({}).toArray();
+        //     res.send(result);
+        // })
+        // Endpoint to get paginated tasks
         app.get('/all-task', async (req, res) => {
-            const result = await taskCollection.find({}).toArray();
-            res.send(result);
-        })
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 10;
+            const skip = (page - 1) * limit;
+
+            const totalTasks = await taskCollection.countDocuments();
+            const tasks = await taskCollection.find().skip(skip).limit(limit).toArray();
+
+            res.send({
+                tasks,
+                totalTasks,
+                totalPages: Math.ceil(totalTasks / limit),
+                currentPage: page
+            });
+        });
+
 
         //find details of specific task
         app.get('/details/:id', async (req, res) => {
@@ -188,19 +238,257 @@ async function run() {
         })
 
         // get all task submission for a specific user
-        app.get('/submission/:email',  async (req, res) => {
+        // app.get('/submission/:email', async (req, res) => {
+
+        //     //const tokenEmail = req.user.email;
+        //     const email = req.params.email;
+
+        //     // if (tokenEmail !== email) {
+        //     //     return res.status(403).send({ message: 'forbidden access' });
+        //     // }
+
+        //     const query = { 'worker_email': email }
+        //     const result = await submissionCollection.find(query).toArray();
+        //     res.send(result);
+        // })
+        // Endpoint to get paginated submissions for a specific user
+        app.get('/submission/:email', async (req, res) => {
+            const email = req.params.email;
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 10;
+            const skip = (page - 1) * limit;
+
+            const totalSubmissions = await submissionCollection.countDocuments({ 'worker_email': email });
+            const submissions = await submissionCollection.find({ 'worker_email': email }).skip(skip).limit(limit).toArray();
+
+            res.send({
+                submissions,
+                totalSubmissions,
+                totalPages: Math.ceil(totalSubmissions / limit),
+                currentPage: page
+            });
+        });
+
+
+
+
+        //get all pending task for judging
+        app.get('/status/:email/:status', async (req, res) => {
 
             //const tokenEmail = req.user.email;
             const email = req.params.email;
+
 
             // if (tokenEmail !== email) {
             //     return res.status(403).send({ message: 'forbidden access' });
             // }
 
-            const query = { 'worker_email': email }
+            const status = req.params.status;
+            const query = { author_email: email, status: status }
             const result = await submissionCollection.find(query).toArray();
             res.send(result);
         })
+
+        // Approve task and increment coin
+        app.put('/approve-task/:id', async (req, res) => {
+            const taskId = req.params.id;
+            const { worker_email, coin } = req.body;
+
+            const taskQuery = { _id: new ObjectId(taskId) };
+            const updateTask = {
+                $set: {
+                    status: 'Approved'
+                }
+            };
+
+            const userQuery = { email: worker_email };
+            const updateUser = {
+                $inc: { coin: coin }
+            };
+
+            const taskResult = await submissionCollection.updateOne(taskQuery, updateTask);
+            const userResult = await userCollection.updateOne(userQuery, updateUser);
+
+            res.send({ taskResult, userResult });
+        });
+
+        // Reject task and update status
+        app.put('/reject-task/:id', async (req, res) => {
+            const taskId = req.params.id;
+
+            const taskQuery = { _id: new ObjectId(taskId) };
+            const updateTask = {
+                $set: {
+                    status: 'Rejected'
+                }
+            };
+
+            const taskResult = await submissionCollection.updateOne(taskQuery, updateTask);
+
+            res.send({ taskResult });
+        });
+
+        // Update task creator's coin balance when add task is clicked
+        app.patch('/user/:email', async (req, res) => {
+            const email = req.params.email;
+            const { coin } = req.body;
+
+            try {
+                const query = { email: email };
+                const update = { $set: { coin: coin } };
+                const result = await userCollection.updateOne(query, update);
+
+                res.send(result);
+            } catch (error) {
+                console.error('Failed to update user coin balance:', error);
+                res.status(500).send({ success: false, message: 'Failed to update user coin balance' });
+            }
+        });
+
+        //user admin kina chk korteci
+        app.get('/users/admin/:email', async (req, res) => {
+            const email = req.params.email;
+
+            // if (email !== req.decoded.email) {
+            //     return res.status(403).send({ message: 'forbidden access' })
+            // }
+
+            const query = { email: email }
+            const user = await userCollection.findOne(query);
+
+            let admin = false;
+
+            if (user) {
+                admin = user.accountType === 'admin';
+            }
+
+            res.send({ admin })
+
+        })
+
+        //user task creator kina check korteci
+        app.get('/users/creator/:email', async (req, res) => {
+            const email = req.params.email;
+
+            // if (email !== req.decoded.email) {
+            //     return res.status(403).send({ message: 'forbidden access' })
+            // }
+
+            const query = { email: email }
+            const user = await userCollection.findOne(query);
+
+            let creator = false;
+
+            if (user) {
+                creator = user.accountType === 'taskCreator';
+            }
+
+            res.send({ creator })
+
+        })
+
+
+
+        // Get all users with the role 'worker'
+        app.get('/users/worker', async (req, res) => {
+            try {
+                const workers = await userCollection.find({ accountType: 'worker' }).toArray();
+                res.send(workers);
+            } catch (error) {
+                console.error('Failed to fetch workers:', error);
+                res.status(500).send({ success: false, message: 'Failed to fetch workers' });
+            }
+        });
+
+        // PATCH endpoint to update the role of a user
+        app.patch('/users/role/:id', async (req, res) => {
+            const userId = req.params.id;
+            const newRole = req.body.accountType;
+
+            const query = { _id: new ObjectId(userId) };
+
+            const updateDoc = {
+                $set: {
+                    accountType: newRole,
+                },
+            };
+
+            const result = await userCollection.updateOne(query, updateDoc);
+            res.send(result);
+        });
+
+        // DELETE a user by admin
+        app.delete('/delete-user/:id', async (req, res) => {
+            const userId = req.params.id;
+
+            const query = { _id: new ObjectId(userId) };
+
+            const result = await userCollection.deleteOne(query);
+            res.send(result);
+        });
+
+        // Endpoint to get all tasks
+        app.get('/tasklist', async (req, res) => {
+            const result = await taskCollection.find({}).toArray();
+            res.send(result);
+        });
+
+
+
+
+
+
+
+
+        // Delete a user by ID
+        // app.delete('/user/:id', async (req, res) => {
+        //     const id = req.params.id;
+        //     try {
+        //         const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
+        //         res.send(result);
+        //     } catch (error) {
+        //         console.error('Failed to delete user:', error);
+        //         res.status(500).send({ success: false, message: 'Failed to delete user' });
+        //     }
+        // });
+
+        // Update a user's role by ID
+        // app.patch('/user/role/:id', async (req, res) => {
+        //     const id = req.params.id;
+        //     const { role } = req.body;
+
+        //     try {
+        //         const result = await userCollection.updateOne(
+        //             { _id: new ObjectId(id) },
+        //             { $set: { accountType: role } }
+        //         );
+        //         res.send(result);
+        //     } catch (error) {
+        //         console.error('Failed to update user role:', error);
+        //         res.status(500).send({ success: false, message: 'Failed to update user role' });
+        //     }
+        // });
+
+
+
+
+
+        //approve or reject and update status
+        // app.put('/status-update/:id', async (req, res) => {
+        //     const query = { _id: new ObjectId(req.params.id) }
+        //     const updatedData = req.body;
+        //     const options = { upsert: true }
+        //     const data = {
+        //         $set: {
+        //             status: updatedData.status,
+        //             obtained_marks: updatedData.obtained_marks,
+        //             feedback: updatedData.feedback,
+        //         },
+        //     };
+
+        //     const result = await submissionCollection.updateOne(query, data, options);
+        //     res.send(result);
+        // })
 
 
 
