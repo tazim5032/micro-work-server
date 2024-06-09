@@ -43,6 +43,8 @@ async function run() {
         const submissionCollection = client.db('picoWorkerDB').collection('submission');
         const paymentCollection = client.db('picoWorkerDB').collection('payments');
         const tempCollection = client.db('picoWorkerDB').collection('temp');
+        const withdrawCollection = client.db('picoWorkerDB').collection('withdraw');
+
 
 
         //jwt related api
@@ -529,7 +531,49 @@ async function run() {
             const payments = await paymentCollection.find(query).toArray();
             res.send(payments);
         });
-        
+
+
+        app.post('/withdraw', async (req, res) => {
+            const { worker_email, withdraw_coin, withdraw_amount, payment_system, account_number, withdraw_time } = req.body;
+
+            // Ensure the user exists and has enough coins to withdraw
+            const user = await userCollection.findOne({ email: worker_email });
+
+            if (user && user.coin >= withdraw_coin) {
+                // Insert the withdrawal request into the withdrawCollection
+                const withdrawalRequest = {
+                    worker_email,
+                    worker_name: user.displayName,
+                    withdraw_coin,
+                    withdraw_amount,
+                    payment_system,
+                    account_number,
+                    withdraw_time
+                };
+                const withdrawalResult = await withdrawCollection.insertOne(withdrawalRequest);
+
+                // Update the user's coin balance and increment total_income
+                const updatedUser = await userCollection.updateOne(
+                    { email: worker_email },
+                    {
+                        $inc: {
+                            coin: -withdraw_coin,
+                            total_income: parseFloat(withdraw_amount)
+                        }
+                    }
+                );
+
+                res.send({
+                    insertedId: withdrawalResult.insertedId,
+                    updatedUser
+                });
+            } else {
+                res.status(400).send({ message: 'Insufficient coins or user not found' });
+            }
+        });
+
+
+
 
 
 
