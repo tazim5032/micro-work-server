@@ -555,22 +555,107 @@ async function run() {
                 // Update the user's coin balance and increment total_income
                 const updatedUser = await userCollection.updateOne(
                     { email: worker_email },
-                    {
-                        $inc: {
-                            coin: -withdraw_coin,
-                            total_income: parseFloat(withdraw_amount)
-                        }
-                    }
+                    // {
+                    //     $inc: {
+                    //         coin: -withdraw_coin,
+                    //         total_income: parseFloat(withdraw_amount)
+                    //     }
+                    // }
                 );
 
                 res.send({
                     insertedId: withdrawalResult.insertedId,
-                    updatedUser
+                     updatedUser
                 });
             } else {
                 res.status(400).send({ message: 'Insufficient coins or user not found' });
             }
         });
+
+        // Fetch approved submissions by user email
+        app.get('/approved-submissions/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { creator_email: email, status: "Approved" };
+            const result = await submissionCollection.find(query).toArray();
+            res.send(result);
+        });
+
+        // Count total users
+        app.get('/admin/total-users', async (req, res) => {
+            const totalUsers = await userCollection.countDocuments();
+            res.send({ totalUsers });
+        });
+
+        // Count total coins
+        app.get('/admin/total-coins', async (req, res) => {
+            const result = await userCollection.aggregate([
+                { $group: { _id: null, totalCoins: { $sum: "$coin" } } }
+            ]).toArray();
+            const totalCoins = result[0]?.totalCoins || 0;
+            res.send({ totalCoins });
+        });
+
+
+        // Get total payment amount and completed payments count
+        app.get('/admin/total-payments', async (req, res) => {
+            const totalPaymentsResult = await paymentCollection.aggregate([
+                {
+                    $group: {
+                        _id: null, totalAmount: { $sum: "$price" },
+                        completedPayments: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } }
+                    }
+                }
+            ]).toArray();
+
+            const totalAmount = totalPaymentsResult[0]?.totalAmount || 0;
+            const completedPayments = totalPaymentsResult[0]?.completedPayments || 0;
+
+            res.send({ totalAmount, completedPayments });
+        });
+
+        // Get total number of payments
+        app.get('/admin/total-payments-count', async (req, res) => {
+            const totalPaymentsCount = await paymentCollection.countDocuments();
+            res.send({ totalPaymentsCount });
+        });
+
+        // Fetch all withdrawal requests
+        app.get('/admin/withdraw-requests', async (req, res) => {
+            const withdrawRequests = await withdrawCollection.find().toArray();
+            res.send(withdrawRequests);
+        });
+
+        // Handle payment success
+        app.delete('/admin/withdraw-request/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+
+            // Find the withdrawal request
+            const withdrawRequest = await withdrawCollection.findOne(query);
+            if (!withdrawRequest) {
+                return res.status(404).send({ message: 'Withdrawal request not found' });
+            }
+
+            // Update the user's coin and total_income
+            const userQuery = { email: withdrawRequest.worker_email };
+            const update = {
+                $inc: {
+                    coin: -parseFloat(withdrawRequest.withdraw_coin),
+                    total_income: parseFloat(withdrawRequest.withdraw_amount)
+                }
+            };
+            await userCollection.updateOne(userQuery, update);
+
+            // Delete the withdrawal request
+            const result = await withdrawCollection.deleteOne(query);
+            res.send(result);
+        });
+
+
+
+
+
+
 
 
 
