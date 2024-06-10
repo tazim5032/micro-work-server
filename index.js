@@ -84,8 +84,32 @@ async function run() {
             const email = req.decoded.email;
             const query = { email: email };
             const user = await userCollection.findOne(query);
-            const isAdmin = user?.role === 'admin';
+            const isAdmin = user?.accountType === 'admin';
             if (!isAdmin) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+            next();
+        }
+
+        // use verify author after verifyToken 
+        const verifyAuthor = async (req, res, next) => {
+            const email = req.decoded.email;
+            const query = { email: email };
+            const user = await userCollection.findOne(query);
+            const isAuthor = user?.accountType === 'taskCreator';
+            if (!isAuthor) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+            next();
+        }
+
+        // use verify author after verifyToken 
+        const verifyWorker = async (req, res, next) => {
+            const email = req.decoded.email;
+            const query = { email: email };
+            const user = await userCollection.findOne(query);
+            const isWorker = user?.accountType === 'worker';
+            if (!isWorker) {
                 return res.status(403).send({ message: 'forbidden access' });
             }
             next();
@@ -109,38 +133,30 @@ async function run() {
         })
 
         //add a task by author
-        app.post('/task', async (req, res) => {
+        app.post('/task', verifyToken, verifyAuthor, async (req, res) => {
             const item = req.body;
             const result = await taskCollection.insertOne(item);
             res.send(result);
         });
 
         // get all task created by a specific authur
-        app.get('/my-task-list/:email', async (req, res) => {
+        app.get('/my-task-list/:email', verifyToken, async (req, res) => {
 
 
             const email = req.params.email;
-            //const tokenEmail = req.decoded.email;
+            const tokenEmail = req.decoded.email;
 
-            // if (tokenEmail !== email) {
-            //     return res.status(403).send({ message: 'forbidden access' });
-            // }
+             if (tokenEmail !== email) {
+                 return res.status(403).send({ message: 'forbidden access' });
+             }
 
             const query = { 'author_email': email }
             const result = await taskCollection.find(query).toArray();
             res.send(result);
         })
 
-        //delete a task by author
-        // app.delete('/task/:id', async (req, res) => {
-        //     const id = req.params.id;
-        //     const query = { _id: new ObjectId(id) }
-        //     const result = await taskCollection.deleteOne(query);
-        //     res.send(result);
-        // })
-        // delete a task by author and update user's coin balance
-        // delete a task by author and update user's coin balance
-        app.delete('/task/:id', async (req, res) => {
+
+        app.delete('/task/:id',verifyToken, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
 
@@ -196,11 +212,7 @@ async function run() {
             res.send(result);
         })
 
-        //get all task
-        // app.get('/all-task', async (req, res) => {
-        //     const result = await taskCollection.find({}).toArray();
-        //     res.send(result);
-        // })
+       
         // Endpoint to get paginated tasks
         app.get('/all-task', async (req, res) => {
             const page = parseInt(req.query.page) || 1;
@@ -242,19 +254,21 @@ async function run() {
         })
 
         // get all task submission for a specific user
-        app.get('/user-submission/:email', async (req, res) => {
+        app.get('/user-submission/:email', verifyToken, verifyWorker, async (req, res) => {
 
-            //const tokenEmail = req.user.email;
+            const tokenEmail = req.decoded.email;
             const email = req.params.email;
 
-            // if (tokenEmail !== email) {
-            //     return res.status(403).send({ message: 'forbidden access' });
-            // }
+            if (tokenEmail !== email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
 
             const query = { 'worker_email': email }
             const result = await submissionCollection.find(query).toArray();
             res.send(result);
         })
+
+
         // Endpoint to get paginated submissions for a specific user
         app.get('/submission/:email', async (req, res) => {
             const email = req.params.email;
@@ -573,9 +587,9 @@ async function run() {
         });
 
         // Fetch approved submissions by user email
-        app.get('/approved-submissions/:email', async (req, res) => {
+        app.get('/approved-submissions/:email', verifyToken, verifyWorker, async (req, res) => {
             const email = req.params.email;
-            const query = { creator_email: email, status: "Approved" };
+            const query = { worker_email: email, status: "Approved" };
             const result = await submissionCollection.find(query).toArray();
             res.send(result);
         });
@@ -650,78 +664,7 @@ async function run() {
             const result = await withdrawCollection.deleteOne(query);
             res.send(result);
         });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        // Delete a user by ID
-        // app.delete('/user/:id', async (req, res) => {
-        //     const id = req.params.id;
-        //     try {
-        //         const result = await userCollection.deleteOne({ _id: new ObjectId(id) });
-        //         res.send(result);
-        //     } catch (error) {
-        //         console.error('Failed to delete user:', error);
-        //         res.status(500).send({ success: false, message: 'Failed to delete user' });
-        //     }
-        // });
-
-        // Update a user's role by ID
-        // app.patch('/user/role/:id', async (req, res) => {
-        //     const id = req.params.id;
-        //     const { role } = req.body;
-
-        //     try {
-        //         const result = await userCollection.updateOne(
-        //             { _id: new ObjectId(id) },
-        //             { $set: { accountType: role } }
-        //         );
-        //         res.send(result);
-        //     } catch (error) {
-        //         console.error('Failed to update user role:', error);
-        //         res.status(500).send({ success: false, message: 'Failed to update user role' });
-        //     }
-        // });
-
-
-
-
-
-        //approve or reject and update status
-        // app.put('/status-update/:id', async (req, res) => {
-        //     const query = { _id: new ObjectId(req.params.id) }
-        //     const updatedData = req.body;
-        //     const options = { upsert: true }
-        //     const data = {
-        //         $set: {
-        //             status: updatedData.status,
-        //             obtained_marks: updatedData.obtained_marks,
-        //             feedback: updatedData.feedback,
-        //         },
-        //     };
-
-        //     const result = await submissionCollection.updateOne(query, data, options);
-        //     res.send(result);
-        // })
-
-
-
+        
 
 
 
