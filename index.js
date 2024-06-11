@@ -44,6 +44,7 @@ async function run() {
         const paymentCollection = client.db('picoWorkerDB').collection('payments');
         const tempCollection = client.db('picoWorkerDB').collection('temp');
         const withdrawCollection = client.db('picoWorkerDB').collection('withdraw');
+        const notificationCollection = client.db('picoWorkerDB').collection('notification');
 
 
 
@@ -51,7 +52,7 @@ async function run() {
         app.post('/jwt', async (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-                expiresIn: '15h'
+                expiresIn: '20h'
             });
 
             res.send({ token })
@@ -103,7 +104,7 @@ async function run() {
             next();
         }
 
-        // use verify author after verifyToken 
+        // use verify worker after verifyToken 
         const verifyWorker = async (req, res, next) => {
             const email = req.decoded.email;
             const query = { email: email };
@@ -140,15 +141,15 @@ async function run() {
         });
 
         // get all task created by a specific authur
-        app.get('/my-task-list/:email', verifyToken, async (req, res) => {
+        app.get('/my-task-list/:email', verifyToken, verifyAuthor, async (req, res) => {
 
 
             const email = req.params.email;
             const tokenEmail = req.decoded.email;
 
-             if (tokenEmail !== email) {
-                 return res.status(403).send({ message: 'forbidden access' });
-             }
+            if (tokenEmail !== email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
 
             const query = { 'author_email': email }
             const result = await taskCollection.find(query).toArray();
@@ -156,7 +157,8 @@ async function run() {
         })
 
 
-        app.delete('/task/:id',verifyToken, async (req, res) => {
+        //delete specific task
+        app.delete('/task/:id', verifyToken, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
 
@@ -189,13 +191,13 @@ async function run() {
 
 
         //update product korar jonno data fetch kore client e dekhabo
-        app.get('/updateProduct/:id', async (req, res) => {
+        app.get('/updateProduct/:id',verifyToken, verifyAuthor, async (req, res) => {
             const result = await taskCollection.findOne({ _id: new ObjectId(req.params.id) });
             res.send(result);
         })
 
         //client side e update confirm korar por
-        app.patch('/updateProduct/:id', async (req, res) => {
+        app.patch('/updateProduct/:id',verifyToken, async (req, res) => {
             const query = { _id: new ObjectId(req.params.id) }
             const updatedData = req.body;
             const options = { upsert: true }
@@ -212,7 +214,7 @@ async function run() {
             res.send(result);
         })
 
-       
+
         // Endpoint to get paginated tasks
         app.get('/all-task', async (req, res) => {
             const page = parseInt(req.query.page) || 1;
@@ -230,16 +232,25 @@ async function run() {
             });
         });
 
+        // Endpoint to get featured tasks
+        app.get('/all-featured-task', async (req, res) => {
+            
+                const task = req.body;
+                const result = await taskCollection.find(task).toArray;
+
+                res.send(result)
+        });
+
 
         //find details of specific task
-        app.get('/details/:id', async (req, res) => {
+        app.get('/details/:id', verifyToken, async (req, res) => {
             const result = await taskCollection.findOne({ _id: new ObjectId(req.params.id) });
             res.send(result);
         })
 
 
         // Find user by email
-        app.get('/user/:email', async (req, res) => {
+        app.get('/user/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
             const query = { 'email': email }
             const result = await userCollection.findOne(query);
@@ -270,7 +281,7 @@ async function run() {
 
 
         // Endpoint to get paginated submissions for a specific user
-        app.get('/submission/:email', async (req, res) => {
+        app.get('/submission/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
             const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 10;
@@ -291,7 +302,7 @@ async function run() {
 
 
         //get all pending task for judging
-        app.get('/status/:email/:status', async (req, res) => {
+        app.get('/status/:email/:status', verifyToken, async (req, res) => {
 
             //const tokenEmail = req.user.email;
             const email = req.params.email;
@@ -308,9 +319,10 @@ async function run() {
         })
 
         // Approve task and increment coin
-        app.put('/approve-task/:id', async (req, res) => {
+        app.put('/approve-task/:id', verifyToken, async (req, res) => {
             const taskId = req.params.id;
-            const { worker_email, coin } = req.body;
+            const { worker_email, coin, title,
+                author_name } = req.body;
 
             const taskQuery = { _id: new ObjectId(taskId) };
             const updateTask = {
@@ -327,12 +339,26 @@ async function run() {
             const taskResult = await submissionCollection.updateOne(taskQuery, updateTask);
             const userResult = await userCollection.updateOne(userQuery, updateUser);
 
+
+
+            // Insert notification
+            const notification = {
+                message: `You have earned ${coin} from ${author_name} for 
+                completing ${title}`,
+                toEmail: worker_email,
+                time: new Date()
+            };
+
+            await notificationCollection.insertOne(notification);
+
+
             res.send({ taskResult, userResult });
         });
 
         // Reject task and update status
-        app.put('/reject-task/:id', async (req, res) => {
+        app.put('/reject-task/:id', verifyToken, async (req, res) => {
             const taskId = req.params.id;
+            const { worker_email, title, author_name } = req.body;
 
             const taskQuery = { _id: new ObjectId(taskId) };
             const updateTask = {
@@ -343,11 +369,33 @@ async function run() {
 
             const taskResult = await submissionCollection.updateOne(taskQuery, updateTask);
 
+            // Insert notification
+            const notification = {
+                message: `Your submission for ${title} was rejected by ${author_name}`,
+                toEmail: worker_email,
+                time: new Date()
+            };
+
+            await notificationCollection.insertOne(notification);
+
             res.send({ taskResult });
         });
 
+        // Fetch notifications for a specific user
+        app.get('/notifications/:email', verifyToken, async (req, res) => {
+            const email = req.params.email;
+
+            if (email !== req.decoded.email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            const notifications = await notificationCollection.find({ toEmail: email }).sort({ time: -1 }).toArray();
+            res.send(notifications);
+        });
+ 
+
         // Update task creator's coin balance when add task is clicked
-        app.patch('/user/:email', async (req, res) => {
+        app.patch('/user/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
             const { coin } = req.body;
 
@@ -364,7 +412,7 @@ async function run() {
         });
 
         //user admin kina chk korteci
-        app.get('/users/admin/:email', async (req, res) => {
+        app.get('/users/admin/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
 
             // if (email !== req.decoded.email) {
@@ -385,7 +433,7 @@ async function run() {
         })
 
         //user task creator kina check korteci
-        app.get('/users/creator/:email', async (req, res) => {
+        app.get('/users/creator/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
 
             // if (email !== req.decoded.email) {
@@ -408,7 +456,7 @@ async function run() {
 
 
         // Get all users with the role 'worker'
-        app.get('/users/worker', async (req, res) => {
+        app.get('/users/worker', verifyToken, async (req, res) => {
             try {
                 const workers = await userCollection.find({ accountType: 'worker' }).toArray();
                 res.send(workers);
@@ -419,7 +467,7 @@ async function run() {
         });
 
         // PATCH endpoint to update the role of a user
-        app.patch('/users/role/:id', async (req, res) => {
+        app.patch('/users/role/:id', verifyToken, verifyAdmin, async (req, res) => {
             const userId = req.params.id;
             const newRole = req.body.accountType;
 
@@ -472,15 +520,7 @@ async function run() {
             })
         })
 
-        //save the payment in the database
-        // app.post('/payments', async (req, res) => {
-        //     const payment = req.body;
-        //     const paymentResult = await paymentCollection.insertOne(payment);
 
-
-
-        //     res.send({ paymentResult });
-        // })
         // Save the payment in the database and update user's coin balance
         app.post('/payments', async (req, res) => {
             const payment = req.body;
@@ -579,7 +619,7 @@ async function run() {
 
                 res.send({
                     insertedId: withdrawalResult.insertedId,
-                     updatedUser
+                    updatedUser
                 });
             } else {
                 res.status(400).send({ message: 'Insufficient coins or user not found' });
@@ -664,7 +704,7 @@ async function run() {
             const result = await withdrawCollection.deleteOne(query);
             res.send(result);
         });
-        
+
 
 
 
