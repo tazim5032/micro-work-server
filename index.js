@@ -484,7 +484,7 @@ async function run() {
         });
 
         // DELETE a user by admin
-        app.delete('/delete-user/:id', async (req, res) => {
+        app.delete('/delete-user/:id', verifyToken, verifyAdmin, async (req, res) => {
             const userId = req.params.id;
 
             const query = { _id: new ObjectId(userId) };
@@ -501,7 +501,7 @@ async function run() {
 
 
         //***********Payment related API*******************/
-        app.post("/create-payment-intent", async (req, res) => {
+        app.post("/create-payment-intent", verifyToken, async (req, res) => {
 
             const { price } = req.body;
 
@@ -522,7 +522,7 @@ async function run() {
 
 
         // Save the payment in the database and update user's coin balance
-        app.post('/payments', async (req, res) => {
+        app.post('/payments', verifyToken, async (req, res) => {
             const payment = req.body;
             const paymentResult = await paymentCollection.insertOne(payment);
 
@@ -579,7 +579,7 @@ async function run() {
         });
 
         //payment history
-        app.get('/payments/:email', async (req, res) => {
+        app.get('/payments/:email', verifyToken, verifyAuthor, async (req, res) => {
             const email = req.params.email;
             const query = { email: email };
             const payments = await paymentCollection.find(query).toArray();
@@ -587,7 +587,7 @@ async function run() {
         });
 
 
-        app.post('/withdraw', async (req, res) => {
+        app.post('/withdraw', verifyToken, verifyWorker, async (req, res) => {
             const { worker_email, withdraw_coin, withdraw_amount, payment_system, account_number, withdraw_time } = req.body;
 
             // Ensure the user exists and has enough coins to withdraw
@@ -635,13 +635,13 @@ async function run() {
         });
 
         // Count total users
-        app.get('/admin/total-users', async (req, res) => {
+        app.get('/admin/total-users', verifyToken, verifyAdmin, async (req, res) => {
             const totalUsers = await userCollection.countDocuments();
             res.send({ totalUsers });
         });
 
         // Count total coins
-        app.get('/admin/total-coins', async (req, res) => {
+        app.get('/admin/total-coins', verifyToken, verifyAdmin, async (req, res) => {
             const result = await userCollection.aggregate([
                 { $group: { _id: null, totalCoins: { $sum: "$coin" } } }
             ]).toArray();
@@ -651,7 +651,7 @@ async function run() {
 
 
         // Get total payment amount and completed payments count
-        app.get('/admin/total-payments', async (req, res) => {
+        app.get('/admin/total-payments', verifyToken, verifyAdmin, async (req, res) => {
             const totalPaymentsResult = await paymentCollection.aggregate([
                 {
                     $group: {
@@ -668,19 +668,19 @@ async function run() {
         });
 
         // Get total number of payments
-        app.get('/admin/total-payments-count', async (req, res) => {
+        app.get('/admin/total-payments-count',verifyToken, verifyAdmin, async (req, res) => {
             const totalPaymentsCount = await paymentCollection.countDocuments();
             res.send({ totalPaymentsCount });
         });
 
         // Fetch all withdrawal requests
-        app.get('/admin/withdraw-requests', async (req, res) => {
+        app.get('/admin/withdraw-requests', verifyToken, verifyAdmin, async (req, res) => {
             const withdrawRequests = await withdrawCollection.find().toArray();
             res.send(withdrawRequests);
         });
 
         // Handle payment success
-        app.delete('/admin/withdraw-request/:id', async (req, res) => {
+        app.delete('/admin/withdraw-request/:id', verifyToken, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
 
