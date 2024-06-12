@@ -191,13 +191,13 @@ async function run() {
 
 
         //update product korar jonno data fetch kore client e dekhabo
-        app.get('/updateProduct/:id',verifyToken, verifyAuthor, async (req, res) => {
+        app.get('/updateProduct/:id', verifyToken, verifyAuthor, async (req, res) => {
             const result = await taskCollection.findOne({ _id: new ObjectId(req.params.id) });
             res.send(result);
         })
 
         //client side e update confirm korar por
-        app.patch('/updateProduct/:id',verifyToken, async (req, res) => {
+        app.patch('/updateProduct/:id', verifyToken, async (req, res) => {
             const query = { _id: new ObjectId(req.params.id) }
             const updatedData = req.body;
             const options = { upsert: true }
@@ -234,23 +234,23 @@ async function run() {
 
         // Endpoint to get featured tasks
         app.get('/all-featured-task', async (req, res) => {
-            
-                const task = req.body;
-                const result = await taskCollection.find(task).toArray;
 
-                res.send(result)
+            const task = req.body;
+            const result = await taskCollection.find(task).toArray;
+
+            res.send(result)
         });
 
 
         //find details of specific task
-        app.get('/details/:id', verifyToken, async (req, res) => {
+        app.get('/details/:id', async (req, res) => {
             const result = await taskCollection.findOne({ _id: new ObjectId(req.params.id) });
             res.send(result);
         })
 
 
         // Find user by email
-        app.get('/user/:email', verifyToken, async (req, res) => {
+        app.get('/user/:email', async (req, res) => {
             const email = req.params.email;
             const query = { 'email': email }
             const result = await userCollection.findOne(query);
@@ -392,7 +392,7 @@ async function run() {
             const notifications = await notificationCollection.find({ toEmail: email }).sort({ time: -1 }).toArray();
             res.send(notifications);
         });
- 
+
 
         // Update task creator's coin balance when add task is clicked
         app.patch('/user/:email', verifyToken, async (req, res) => {
@@ -467,7 +467,7 @@ async function run() {
         });
 
         // PATCH endpoint to update the role of a user
-        app.patch('/users/role/:id', verifyToken, verifyAdmin, async (req, res) => {
+        app.patch('/users/role/:id', verifyToken, async (req, res) => {
             const userId = req.params.id;
             const newRole = req.body.accountType;
 
@@ -579,7 +579,7 @@ async function run() {
         });
 
         //payment history
-        app.get('/payments/:email', verifyToken, verifyAuthor, async (req, res) => {
+        app.get('/payments/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
             const query = { email: email };
             const payments = await paymentCollection.find(query).toArray();
@@ -587,8 +587,9 @@ async function run() {
         });
 
 
-        app.post('/withdraw', verifyToken, verifyWorker, async (req, res) => {
-            const { worker_email, withdraw_coin, withdraw_amount, payment_system, account_number, withdraw_time } = req.body;
+        app.post('/withdraw', verifyToken, async (req, res) => {
+            const { worker_email, worker_name, withdraw_coin,
+                withdraw_amount, payment_system, account_number, withdraw_time } = req.body;
 
             // Ensure the user exists and has enough coins to withdraw
             const user = await userCollection.findOne({ email: worker_email });
@@ -597,7 +598,7 @@ async function run() {
                 // Insert the withdrawal request into the withdrawCollection
                 const withdrawalRequest = {
                     worker_email,
-                    worker_name: user.displayName,
+                    worker_name,
                     withdraw_coin,
                     withdraw_amount,
                     payment_system,
@@ -607,19 +608,19 @@ async function run() {
                 const withdrawalResult = await withdrawCollection.insertOne(withdrawalRequest);
 
                 // Update the user's coin balance and increment total_income
-                const updatedUser = await userCollection.updateOne(
-                    { email: worker_email },
-                    // {
-                    //     $inc: {
-                    //         coin: -withdraw_coin,
-                    //         total_income: parseFloat(withdraw_amount)
-                    //     }
-                    // }
-                );
+                //   const updatedUser = await userCollection.updateOne(
+                //      { email: worker_email }
+                // {
+                //     $inc: {
+                //         coin: -withdraw_coin,
+                //         total_income: parseFloat(withdraw_amount)
+                //     }
+                // }
+                //   );
 
                 res.send({
                     insertedId: withdrawalResult.insertedId,
-                    updatedUser
+                    //updatedUser
                 });
             } else {
                 res.status(400).send({ message: 'Insufficient coins or user not found' });
@@ -668,7 +669,7 @@ async function run() {
         });
 
         // Get total number of payments
-        app.get('/admin/total-payments-count',verifyToken, verifyAdmin, async (req, res) => {
+        app.get('/admin/total-payments-count', verifyToken, verifyAdmin, async (req, res) => {
             const totalPaymentsCount = await paymentCollection.countDocuments();
             res.send({ totalPaymentsCount });
         });
@@ -704,6 +705,39 @@ async function run() {
             const result = await withdrawCollection.deleteOne(query);
             res.send(result);
         });
+
+        // Fetch top 6 earners based on total income
+        app.get('/top-earners', verifyToken, async (req, res) => {
+            try {
+                const topEarners = await userCollection.aggregate([
+                    {
+                        $match: { accountType: 'worker' }
+                    },
+                    {
+                        $sort: { total_income: -1 }
+                    },
+                    {
+                        $limit: 6
+                    },
+                    {
+                        $project: {
+                            email: 1,
+                            name: 1,
+                            picture: 1,
+                            coin: 1,
+                            total_income: 1,
+                            total_tasks: { $size: "$task_completions" }
+                        }
+                    }
+                ]).toArray();
+
+                res.send(topEarners);
+            } catch (error) {
+                console.error('Error fetching top earners:', error);
+                res.status(500).send({ message: 'Internal server error' });
+            }
+        });
+
 
 
 
