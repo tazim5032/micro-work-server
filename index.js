@@ -15,7 +15,8 @@ const corsOptions = {
     origin: [
         'http://localhost:5173',
         'http://localhost:5174',
-        'https://bistro-boss-167fc.web.app',
+        'https://micro-task-55c95.web.app',
+        'https://micro-task-55c95.firebaseapp.com',
 
     ],
     credentials: true,
@@ -707,7 +708,7 @@ async function run() {
         });
 
         // Fetch top 6 earners based on total income
-        app.get('/top-earners', verifyToken, async (req, res) => {
+        app.get('/top-earners', async (req, res) => {
             try {
                 const topEarners = await userCollection.aggregate([
                     {
@@ -723,7 +724,7 @@ async function run() {
                         $project: {
                             email: 1,
                             name: 1,
-                            picture: 1,
+                           // picture: 1,
                             coin: 1,
                             total_income: 1,
                             total_tasks: { $size: "$task_completions" }
