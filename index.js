@@ -17,6 +17,7 @@ const corsOptions = {
         'http://localhost:5174',
         'https://micro-task-55c95.web.app',
         'https://micro-task-55c95.firebaseapp.com',
+        'https://fancy-brioche-ec43f4.netlify.app',
 
     ],
     credentials: true,
